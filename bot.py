@@ -1,8 +1,10 @@
 import os
 import discord
+import json
 from discord.ext import tasks
 from dotenv import load_dotenv
 from scrap import FlatList, parse_link, parse_loc_and_date
+
 
 
 load_dotenv()
@@ -23,9 +25,9 @@ async def on_ready():
     print('We have logged in as {0.user}'.format(client))
 
 
-@tasks.loop(minutes=5.0)
+@tasks.loop(minutes=30.0)
 async def printer():
-    channel = client.get_channel(780863086646132738)
+    channel = client.get_channel(int(os.getenv('CHANNEL_ID')))
     embed_list = create_embed('$find all')
     for embed in embed_list:
         await channel.send(embed=embed)
@@ -33,17 +35,26 @@ async def printer():
 
 @client.event
 async def on_message(message):
+    if not message.content.startswith('$find'):
+        return
     if message.author == client.user:
         return
 
     embed_list = create_embed(message.content)
-    for embed in embed_list:
-        await message.channel.send(embed=embed)
+    if type(embed_list) == list:
+        for embed in embed_list:
+            await message.channel.send(embed=embed)
+    else:
+        await message.channel.send(embed=embed_list)
 
 
 def create_embed(content):
     if content.startswith('$find'):
-        message_args = content.split(' ')[1:]
+        embed = discord.Embed(title='Invalid arguments')
+        message = content.split(' ')
+        if message[0] != '$find':
+            return embed
+        message_args = message[1:]
         if len(message_args) == 1 and message_args[0] in LOCATIONS:
             location_id = LOCATIONS[message_args[0]]
             flat_list = FlatList(
@@ -58,12 +69,11 @@ def create_embed(content):
             price_bound = message_args[1]
             meters_bound = message_args[2]
             flat_list = FlatList(
-                f"https://www.olx.pl/d/nieruchomosci/mieszkania/wynajem/warszawa/?search%5Bdistrict_id%5D={location_id}&search%5Border%5D=created_at:desc&search%5Bfilter_float_price:to%5D={price_bound}&search%5Bfilter_float_m:to%5D={meters_bound}")
+                f"https://www.olx.pl/d/nieruchomosci/mieszkania/wynajem/warszawa/?search%5Bdistrict_id%5D={location_id}&search%5Border%5D=created_at:desc&search%5Bfilter_float_price:to%5D={price_bound}&search%5Bfilter_float_m:from%5D={meters_bound}")
         elif len(message_args) == 0 or message_args[0] == 'all':
             flat_list = FlatList(
                 "https://www.olx.pl/d/nieruchomosci/mieszkania/wynajem/warszawa/?search%5Border%5D=created_at:desc")
         else:
-            embed = discord.Embed(title='Invalid arguments')
             return embed
         flats = flat_list.get_list_of_flats()
         first_loc = parse_loc_and_date(flats[0].footer)['loc']
@@ -72,8 +82,8 @@ def create_embed(content):
             link = parse_link(flat.link)
             loc_and_date = parse_loc_and_date(flat.footer)
             if len(message_args) > 0 and loc_and_date['loc'] != first_loc and message_args[0] != 'all':
-                return
-            embed = discord.Embed(title=loc_and_date['loc'] + "| " + flat.meters + " | " + flat.price,
+                break
+            embed = discord.Embed(title=loc_and_date['loc'] + "| " + flat.price + " | " + flat.meters,
                                   description=link['description'],
                                   color=0xFF5733)
             embed.set_footer(text=link['title'] + "\n\n" + f"{loc_and_date['date']}")
