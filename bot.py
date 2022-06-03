@@ -1,7 +1,8 @@
 import os
+from datetime import datetime
 import discord
 from dotenv import load_dotenv
-from scrap import FlatList
+from scrap import FlatList, parse_link, parse_loc_and_date
 
 
 load_dotenv()
@@ -9,21 +10,10 @@ load_dotenv()
 client = discord.Client()
 
 
-def get_data(link):
-    data = {}
-    if link.startswith('/d/'):
-        data['description'] = f"[OLX](https://www.olx.pl{link})"
-        pre_title = link.split('/')[3]
-        data['title'] = ' '.join(pre_title.split('-')[:-2]).capitalize()
-    else:
-        data['description'] = f"[OLX]({link})"
-        pre_title = link.split('/')[5]
-        print(pre_title)
-        data['title'] = ' '.join(pre_title.split('-')[:-1]).capitalize()
-    return data
 @client.event
 async def on_ready():
     print('We have logged in as {0.user}'.format(client))
+
 
 @client.event
 async def on_message(message):
@@ -32,13 +22,15 @@ async def on_message(message):
 
     if message.content.startswith('$all'):
         flat_list = FlatList()
-        links = flat_list.get_list_of_flats()
-        embed = discord.Embed()
-        for link in links:
-            data = get_data(link)
-            embed = discord.Embed(title=data['title'],
-                                  description=data['description'],
+        flats = flat_list.get_list_of_flats()
+        for flat in flats:
+            link = parse_link(flat.link)
+            loc_and_date = parse_loc_and_date(flat.footer)
+            embed = discord.Embed(title=loc_and_date['loc'],
+                                  description=link['description'],
                                   color=0xFF5733)
+            embed.set_footer(text=link['title'] + "\n\n" + f"{loc_and_date['date']}")
             await message.channel.send(embed=embed)
+
 
 client.run(os.getenv('TOKEN'))
