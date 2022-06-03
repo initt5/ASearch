@@ -3,8 +3,8 @@ import requests
 
 
 class FlatList:
-    def __init__(self):
-        self.URL = "https://www.olx.pl/d/nieruchomosci/mieszkania/wynajem/warszawa/?search%5Border%5D=created_at:desc"
+    def __init__(self, url):
+        self.URL = url
         self.page = requests.get(self.URL)
         self.soup = BeautifulSoup(self.page.content, "html.parser")
 
@@ -14,16 +14,20 @@ class FlatList:
         for link in links:
             link_url = link['href']
             footer = link.find('p', {"class": "css-p6wsjo-Text eu5v0x0"}).getText()
-            flat = Flat(link_url, footer)
+            meters = link.find('p', {"class": "css-1bhbxl1-Text eu5v0x0"}).getText()
+            price = link.find('p', {"class": "css-l0108r-Text eu5v0x0"}).getText().replace('do negocjacji', ' do negocjacji')
+            flat = Flat(link_url, footer, meters, price)
             flat_list.append(flat)
 
         return flat_list
 
 
 class Flat:
-    def __init__(self, link, footer):
+    def __init__(self, link, footer, meters, price):
         self.link = link
         self.footer = footer
+        self.meters = meters
+        self.price = price
 
 
 def parse_link(link):
