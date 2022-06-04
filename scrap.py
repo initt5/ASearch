@@ -13,21 +13,24 @@ class FlatList:
         flat_list = []
         for link in links:
             link_url = link['href']
+            payed = False
             footer = link.find('p', {"class": "css-p6wsjo-Text eu5v0x0"}).getText()
             meters = link.find('p', {"class": "css-1bhbxl1-Text eu5v0x0"}).getText()
             price = link.find('p', {"class": "css-l0108r-Text eu5v0x0"}).getText().replace('do negocjacji', ' do negocjacji')
-            flat = Flat(link_url, footer, meters, price)
+            if link.find('div', {'class': "css-1katuj6"}):
+                payed = True
+            flat = Flat(link_url, footer, meters, price, payed)
             flat_list.append(flat)
-
         return flat_list
 
 
 class Flat:
-    def __init__(self, link, footer, meters, price):
+    def __init__(self, link, footer, meters, price, payed):
         self.link = link
         self.footer = footer
         self.meters = meters
         self.price = price
+        self.payed = payed
 
 
 def parse_link(link):

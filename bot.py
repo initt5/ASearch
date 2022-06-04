@@ -132,4 +132,5 @@ def set_settings(content):
         settings_file.close()
         return embed
 
+
 client.run(os.getenv('TOKEN'))
