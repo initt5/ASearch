@@ -5,8 +5,6 @@ from discord.ext import tasks
 from dotenv import load_dotenv
 from scrap import FlatList, parse_link, parse_loc_and_date
 
-
-
 load_dotenv()
 
 client = discord.Client()
@@ -27,14 +25,30 @@ async def on_ready():
 
 @tasks.loop(minutes=30.0)
 async def printer():
+    settings_file = open('settings.json', encoding="utf-8")
+    settings = json.load(settings_file)
+    if not 'preferred_location' in settings:
+        embed_list = create_embed('$find all')
+    else:
+        if 'price_bound' in settings:
+            if 'meters_bound' in settings:
+                embed_list = create_embed(
+                    f"$find {settings['preferred_location']} {settings['price_bound']} {settings['meters_bound']}")
+            else:
+                embed_list = create_embed(f"$find {settings['preferred_location']} {settings['price_bound']}")
+        else:
+            embed_list = create_embed(f"$find {settings['preferred_location']}")
     channel = client.get_channel(int(os.getenv('CHANNEL_ID')))
-    embed_list = create_embed('$find all')
     for embed in embed_list:
         await channel.send(embed=embed)
 
 
 @client.event
 async def on_message(message):
+    if message.content.startswith('$settings'):
+        settings_message = set_settings(message.content)
+        await message.channel.send(embed=settings_message)
+        return
     if not message.content.startswith('$find'):
         return
     if message.author == client.user:
@@ -50,27 +64,28 @@ async def on_message(message):
 
 def create_embed(content):
     if content.startswith('$find'):
-        embed = discord.Embed(title='Invalid arguments')
+        embed = discord.Embed(title='Invalid arguments, try $find | location/all | max price | min living space ')
         message = content.split(' ')
-        if message[0] != '$find':
+        if message[0] != '$find' or len(message) == 1:
             return embed
         message_args = message[1:]
-        if len(message_args) == 1 and message_args[0] in LOCATIONS:
-            location_id = LOCATIONS[message_args[0]]
-            flat_list = FlatList(
-                f"https://www.olx.pl/d/nieruchomosci/mieszkania/wynajem/warszawa/?search%5Bdistrict_id%5D={location_id}&search%5Border%5D=created_at:desc")
-        elif len(message_args) == 2 and message_args[0] in LOCATIONS and message_args[1].isdigit():
-            location_id = LOCATIONS[message_args[0]]
-            price_bound = message_args[1]
-            flat_list = FlatList(
-                f"https://www.olx.pl/d/nieruchomosci/mieszkania/wynajem/warszawa/?search%5Bdistrict_id%5D={location_id}&search%5Border%5D=created_at:desc&search%5Bfilter_float_price:to%5D={price_bound}")
-        elif len(message_args) == 3 and message_args[0] in LOCATIONS and message_args[1].isdigit() and message_args[2].isdigit():
-            location_id = LOCATIONS[message_args[0]]
-            price_bound = message_args[1]
-            meters_bound = message_args[2]
-            flat_list = FlatList(
-                f"https://www.olx.pl/d/nieruchomosci/mieszkania/wynajem/warszawa/?search%5Bdistrict_id%5D={location_id}&search%5Border%5D=created_at:desc&search%5Bfilter_float_price:to%5D={price_bound}&search%5Bfilter_float_m:from%5D={meters_bound}")
-        elif len(message_args) == 0 or message_args[0] == 'all':
+        loc = message_args[0].lower()
+        if len(message_args) > 0 and loc in LOCATIONS:
+            location_id = LOCATIONS[loc]
+
+            if len(message_args) > 1 and message_args[1].isdigit():
+                price_bound = message_args[1]
+                if len(message_args) == 3 and message_args[2].isdigit():
+                    meters_bound = message_args[2]
+                    flat_list = FlatList(
+                        f"https://www.olx.pl/d/nieruchomosci/mieszkania/wynajem/warszawa/?search%5Bdistrict_id%5D={location_id}&search%5Border%5D=created_at:desc&search%5Bfilter_float_price:to%5D={price_bound}&search%5Bfilter_float_m:from%5D={meters_bound}")
+                else:
+                    flat_list = FlatList(
+                        f"https://www.olx.pl/d/nieruchomosci/mieszkania/wynajem/warszawa/?search%5Bdistrict_id%5D={location_id}&search%5Border%5D=created_at:desc&search%5Bfilter_float_price:to%5D={price_bound}")
+            else:
+                flat_list = FlatList(
+                    f"https://www.olx.pl/d/nieruchomosci/mieszkania/wynajem/warszawa/?search%5Bdistrict_id%5D={location_id}&search%5Border%5D=created_at:desc")
+        elif loc == 'all':
             flat_list = FlatList(
                 "https://www.olx.pl/d/nieruchomosci/mieszkania/wynajem/warszawa/?search%5Border%5D=created_at:desc")
         else:
@@ -90,5 +105,31 @@ def create_embed(content):
             embed_list.append(embed)
         return embed_list
 
+
+def set_settings(content):
+    if content.startswith('$settings'):
+        settings_file = open('settings.json', 'r+', encoding="utf-8")
+        json.dump({}, settings_file)
+        settings = {}
+        embed = discord.Embed(title='Invalid arguments, try $settings | location/all | max price | min living space')
+        message = content.split(' ')
+        if message[0] != '$settings' or len(message) == 1:
+            return embed
+        message_args = message[1:]
+        loc = message_args[0].lower()
+        if len(message_args) > 0 and loc in LOCATIONS:
+            embed = discord.Embed(title='Done')
+            settings["preferred_location"] = loc
+            if len(message_args) > 1 and message_args[1].isdigit():
+                price_bound = message_args[1]
+                settings["price_bound"] = price_bound
+                if len(message_args) == 3 and message_args[2].isdigit():
+                    meters_bound = message_args[2]
+                    settings["meters_bound"] = meters_bound
+        settings_file.seek(0)
+        json.dump(settings, settings_file)
+        settings_file.truncate()
+        settings_file.close()
+        return embed
 
 client.run(os.getenv('TOKEN'))
