@@ -1,6 +1,7 @@
 import os
 import discord
 import json
+
 from discord.ext import tasks
 from dotenv import load_dotenv
 from scrap import FlatList, parse_link, parse_loc_and_date
@@ -23,23 +24,29 @@ async def on_ready():
     print('We have logged in as {0.user}'.format(client))
 
 
-@tasks.loop(minutes=30.0)
+@tasks.loop(minutes=60.0)
 async def printer():
     settings_file = open('settings.json', encoding="utf-8")
     settings = json.load(settings_file)
+
     if not 'preferred_location' in settings:
         embed_list = create_embed('$find all')
+
     else:
         if 'price_bound' in settings:
             if 'meters_bound' in settings:
                 embed_list = create_embed(
-                    f"$find {settings['preferred_location']} {settings['price_bound']} {settings['meters_bound']}")
+                    f"$find {settings['preferred_location']} {settings['price_bound']} {settings['meters_bound']}", True)
+
             else:
-                embed_list = create_embed(f"$find {settings['preferred_location']} {settings['price_bound']}")
+                embed_list = create_embed(f"$find {settings['preferred_location']} {settings['price_bound']}", True)
+
         else:
-            embed_list = create_embed(f"$find {settings['preferred_location']}")
+            embed_list = create_embed(f"$find {settings['preferred_location']}", True)
+
     channel = client.get_channel(int(os.getenv('CHANNEL_ID')))
-    for embed in embed_list:
+    await channel.send(embed=discord.Embed(title=f"{embed_list['new']} nowych mieszkań"))
+    for embed in embed_list['embed']:
         await channel.send(embed=embed)
 
 
@@ -48,28 +55,39 @@ async def on_message(message):
     if message.content.startswith('$settings'):
         settings_message = set_settings(message.content)
         await message.channel.send(embed=settings_message)
+
         return
+
     if not message.content.startswith('$find'):
         return
+
     if message.author == client.user:
         return
 
     embed_list = create_embed(message.content)
-    if type(embed_list) == list:
-        for embed in embed_list:
+
+    if type(embed_list['embed']) == list:
+        for embed in embed_list['embed']:
             await message.channel.send(embed=embed)
     else:
-        await message.channel.send(embed=embed_list)
+        await message.channel.send(embed=embed_list['embed'])
 
 
-def create_embed(content):
+def create_embed(content, save_db=False):
     if content.startswith('$find'):
+
+        db_file = open('db.json', 'r+', encoding="utf-8")
+        db = json.load(db_file)
+
         embed = discord.Embed(title='Invalid arguments, try $find | location/all | max price | min living space ')
         message = content.split(' ')
+
         if message[0] != '$find' or len(message) == 1:
-            return embed
+            return {'embed': embed, 'new': 0}
+
         message_args = message[1:]
         loc = message_args[0].lower()
+
         if len(message_args) > 0 and loc in LOCATIONS:
             location_id = LOCATIONS[loc]
 
@@ -79,31 +97,58 @@ def create_embed(content):
                     meters_bound = message_args[2]
                     flat_list = FlatList(
                         f"https://www.olx.pl/d/nieruchomosci/mieszkania/wynajem/warszawa/?search%5Bdistrict_id%5D={location_id}&search%5Border%5D=created_at:desc&search%5Bfilter_float_price:to%5D={price_bound}&search%5Bfilter_float_m:from%5D={meters_bound}")
+
                 else:
                     flat_list = FlatList(
                         f"https://www.olx.pl/d/nieruchomosci/mieszkania/wynajem/warszawa/?search%5Bdistrict_id%5D={location_id}&search%5Border%5D=created_at:desc&search%5Bfilter_float_price:to%5D={price_bound}")
+
             else:
                 flat_list = FlatList(
                     f"https://www.olx.pl/d/nieruchomosci/mieszkania/wynajem/warszawa/?search%5Bdistrict_id%5D={location_id}&search%5Border%5D=created_at:desc")
+
         elif loc == 'all':
             flat_list = FlatList(
                 "https://www.olx.pl/d/nieruchomosci/mieszkania/wynajem/warszawa/?search%5Border%5D=created_at:desc")
+
         else:
-            return embed
+            return {'embed': embed, 'new': 0}
+
         flats = flat_list.get_list_of_flats()
         first_loc = parse_loc_and_date(flats[0].footer)['loc']
+        if 'link' in db:
+            db_list = db['link']
+        else:
+            db_list = []
+        new = 0
+        new_db = []
         embed_list = []
         for flat in flats:
             link = parse_link(flat.link)
+
             loc_and_date = parse_loc_and_date(flat.footer)
+
             if len(message_args) > 0 and loc_and_date['loc'] != first_loc and message_args[0] != 'all':
                 break
+
+            if link['title'] not in db_list and not flat.payed:
+                new += 1
+                new_db.append(link['title'])
+
             embed = discord.Embed(title=loc_and_date['loc'] + "| " + flat.price + " | " + flat.meters,
                                   description=link['description'],
                                   color=0xFF5733)
             embed.set_footer(text=link['title'] + "\n\n" + f"{loc_and_date['date']}")
             embed_list.append(embed)
-        return embed_list
+
+        if new > 0 and (message_args[0] == 'all' or save_db):
+            db_file.seek(0)
+            json.dump({}, db_file)
+            db_file.truncate()
+            db_file.seek(0)
+            json.dump({'link': new_db}, db_file)
+
+        db_file.close()
+        return {'embed': embed_list, 'new': new}
 
 
 def set_settings(content):
@@ -111,25 +156,32 @@ def set_settings(content):
         settings_file = open('settings.json', 'r+', encoding="utf-8")
         json.dump({}, settings_file)
         settings = {}
+
         embed = discord.Embed(title='Invalid arguments, try $settings | location/all | max price | min living space')
+
         message = content.split(' ')
         if message[0] != '$settings' or len(message) == 1:
             return embed
+
         message_args = message[1:]
         loc = message_args[0].lower()
         if len(message_args) > 0 and loc in LOCATIONS:
             embed = discord.Embed(title='Done')
             settings["preferred_location"] = loc
+
             if len(message_args) > 1 and message_args[1].isdigit():
                 price_bound = message_args[1]
                 settings["price_bound"] = price_bound
+
                 if len(message_args) == 3 and message_args[2].isdigit():
                     meters_bound = message_args[2]
                     settings["meters_bound"] = meters_bound
+
         settings_file.seek(0)
         json.dump(settings, settings_file)
         settings_file.truncate()
         settings_file.close()
+
         return embed
 
 
