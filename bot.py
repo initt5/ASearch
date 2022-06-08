@@ -165,7 +165,7 @@ def set_settings(content):
 
         message_args = message[1:]
         loc = message_args[0].lower()
-        if len(message_args) > 0 and loc in LOCATIONS:
+        if len(message_args) > 0 and (loc in LOCATIONS or loc == 'all'):
             embed = discord.Embed(title='Done')
             settings["preferred_location"] = loc
 
