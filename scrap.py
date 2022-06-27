@@ -16,7 +16,7 @@ class FlatList:
             payed = False
             footer = link.find('p', {"class": "css-p6wsjo-Text eu5v0x0"}).getText()
             meters = link.find('p', {"class": "css-1bhbxl1-Text eu5v0x0"}).getText()
-            price = link.find('p', {"class": "css-l0108r-Text eu5v0x0"}).getText().replace('do negocjacji', ' do negocjacji')
+            price = link.find('p', {"class": "css-wpfvmn-Text eu5v0x0"}).getText().replace('do negocjacji', ' do negocjacji')
             if link.find('div', {'class': "css-1katuj6"}):
                 payed = True
             flat = Flat(link_url, footer, meters, price, payed)
